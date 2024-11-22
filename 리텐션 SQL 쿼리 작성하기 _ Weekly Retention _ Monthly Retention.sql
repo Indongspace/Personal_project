@@ -11,54 +11,6 @@
   -- 2022년 1월 1일(토요일) WEEK : 2022년 1주차. ISO_WEEK 2021년 52주차
   -- 첫 목요일은 2022-01-06. 2022-01-03 ~ 2022-01-09가 2022년 1주차
 
--- WITH base AS (
---   SELECT
---     DISTINCT
---       user_id,
---       event_name,
---       DATE(DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul')) AS event_date,
---       DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul') AS event_datetime,
---       user_pseudo_id
---   FROM advanced.app_logs
---   WHERE
---     event_date BETWEEN '2022-08-01' AND '2022-11-03'
--- ), first_week_and_diff AS (
---   SELECT
---     *,
---     # DATE_DIFF(event_date, first_date, DAY) AS diff_of_day
---     DATE_DIFF(event_week, first_week, WEEK) AS diff_of_week
---   FROM (
---     SELECT
---       DISTINCT
---         -- DATE_TRUNC
---         user_pseudo_id,
---         DATE_TRUNC(MIN(event_date) OVER(PARTITION BY user_pseudo_id), WEEK(MONDAY)) AS first_week,
---         DATE_TRUNC(event_date, WEEK(MONDAY)) AS event_week,
---         -- event_date
---     FROM base
---   )
--- ), user_counts AS (
---   SELECT
---     diff_of_week,
---     COUNT(DISTINCT user_pseudo_id) AS user_cnt
---   FROM first_week_and_diff
---   GROUP BY
---     diff_of_week
--- )
-
--- SELECT
---   *,
---   ROUND(SAFE_DIVIDE(user_cnt, first_cnt), 3) AS retention_rate
--- FROM (
---   SELECT
---     *,
---     FIRST_VALUE(user_cnt) OVER(ORDER BY diff_of_week) AS first_cnt
---   FROM user_counts
--- )
--- ORDER BY
---   diff_of_week
-
-# Monthly 리텐션 쿼리 작성해보기
 WITH base AS (
   SELECT
     DISTINCT
@@ -68,31 +20,78 @@ WITH base AS (
       DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul') AS event_datetime,
       user_pseudo_id
   FROM advanced.app_logs
-  WHERE
-    event_date BETWEEN '2022-08-01' AND '2022-11-03'
-), first_month_and_diff AS (
+), first_week_and_diff AS (
   SELECT
     *,
     # DATE_DIFF(event_date, first_date, DAY) AS diff_of_day
-    # DATE_DIFF(event_week, first_week, WEEK) AS diff_of_week,
-    DATE_DIFF(event_month, first_month, MONTH) AS diff_of_month
+    DATE_DIFF(event_week, first_week, WEEK) AS diff_of_week
   FROM (
     SELECT
       DISTINCT
         -- DATE_TRUNC
         user_pseudo_id,
-        DATE_TRUNC(MIN(event_date) OVER(PARTITION BY user_pseudo_id), MONTH) AS first_month,
-        DATE_TRUNC(event_date, MONTH) AS event_month,
+        DATE_TRUNC(MIN(event_date) OVER(PARTITION BY user_pseudo_id), WEEK(MONDAY)) AS first_week,
+        DATE_TRUNC(event_date, WEEK(MONDAY)) AS event_week,
         -- event_date
     FROM base
   )
+), user_counts AS (
+  SELECT
+    diff_of_week,
+    COUNT(DISTINCT user_pseudo_id) AS user_cnt
+  FROM first_week_and_diff
+  GROUP BY
+    diff_of_week
 )
+
 SELECT
-  diff_of_month,
-  COUNT(DISTINCT user_pseudo_id) AS user_cnt
-FROM first_month_and_diff
-GROUP BY
-  diff_of_month
+  diff_of_week,
+  user_cnt,
+  ROUND(SAFE_DIVIDE(user_cnt, first_cnt), 3) AS retention_rate
+FROM (
+  SELECT
+    *,
+    FIRST_VALUE(user_cnt) OVER(ORDER BY diff_of_week) AS first_cnt
+  FROM user_counts
+)
 ORDER BY
-  diff_of_month
-  
+  diff_of_week
+
+
+
+# Monthly 리텐션 쿼리 작성해보기
+-- WITH base AS (
+--   SELECT
+--     DISTINCT
+--       user_id,
+--       event_name,
+--       DATE(DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul')) AS event_date,
+--       DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul') AS event_datetime,
+--       user_pseudo_id
+--   FROM advanced.app_logs
+-- ), first_month_and_diff AS (
+--   SELECT
+--     *,
+--     # DATE_DIFF(event_date, first_date, DAY) AS diff_of_day
+--     # DATE_DIFF(event_week, first_week, WEEK) AS diff_of_week,
+--     DATE_DIFF(event_month, first_month, MONTH) AS diff_of_month
+--   FROM (
+--     SELECT
+--       DISTINCT
+--         -- DATE_TRUNC
+--         user_pseudo_id,
+--         DATE_TRUNC(MIN(event_date) OVER(PARTITION BY user_pseudo_id), MONTH) AS first_month,
+--         DATE_TRUNC(event_date, MONTH) AS event_month,
+--         -- event_date
+--     FROM base
+--   )
+-- )
+-- SELECT
+--   diff_of_month,
+--   COUNT(DISTINCT user_pseudo_id) AS user_cnt
+-- FROM first_month_and_diff
+-- GROUP BY
+--   diff_of_month
+-- ORDER BY
+--   diff_of_month
+

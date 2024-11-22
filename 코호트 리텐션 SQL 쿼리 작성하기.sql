@@ -10,8 +10,6 @@ WITH base AS (
       DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul') AS event_datetime,
       user_pseudo_id
   FROM advanced.app_logs
-  WHERE
-    event_date BETWEEN '2022-08-01' AND '2022-12-31'
 ), first_week_and_diff AS (
   SELECT
     *,
