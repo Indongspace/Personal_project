@@ -12,7 +12,7 @@ WITH base AS (
   WHERE
     event_date BETWEEN '2022-08-01' AND '2022-11-01'
 ) 
--- 끝 --
+-----------------------------------------------------------
 -- 유저 로그 기록 (첫날, 마지막날, 접속 수) 구하는 쿼리 --
 , user_activity AS (
   SELECT
@@ -24,7 +24,7 @@ WITH base AS (
   GROUP BY
     user_pseudo_id
 )
--- 끝 --
+-----------------------------------------------------------------
 -- 기존유저(Current, 제품을 지속적으로 사용하는 유저) 구하는 쿼리 -- 
 # 3주 이상 연속 활동한 유저를 기존(Current) 유저로 설정
 , current_week_activity AS (
@@ -48,7 +48,7 @@ WITH base AS (
   WHERE
     user_pseudo_id IN (SELECT user_pseudo_id FROM last_two_weeks_activity WHERE last_week_active = 1 AND two_weeks_ago_active = 1) -- 지난 2주 연속 사용한 유저와 현재 주에 사용한 유저 교집합 (결국 3주 연속 사용유저)
 )
--- 끝 --
+----------------------------------------------------------------------------------------------
 -- 휴면유저(Dormant, 일정 기간 제품을 사용하지 않은 비활성화 사용자) 구하는 쿼리 --
 # 비활성화 기준 : 30일 이상 미사용 
 , dormant_user_classification AS (
@@ -61,10 +61,19 @@ WITH base AS (
   HAVING
     DATE_DIFF((SELECT MAX(event_date) FROM base), last_active_date, DAY) > 30
 )
--- 끝 --
-SELECT
-  DISTINCT user_classification
-FROM (
+-----------------------------------------------------------------------------------------------------
+-- 복귀유저(Resurrected, 과거에 사용 -> 비활성 -> 다시 제품을 사용한 유저) 구하는 쿼리 --
+
+
+
+
+
+
+
+
+---------------------------------------------------------------------------------------------
+-- (복귀유저 없는) 유저 분류 쿼리 --
+, user_classification_result AS (
   SELECT
     ua.user_pseudo_id,
     CASE
@@ -78,11 +87,15 @@ FROM (
   LEFT JOIN dormant_user_classification AS du
   ON ua.user_pseudo_id = du.user_pseudo_id
 )
-
-# 이제 복귀유저를 구하는 일만 남음.
-
-
-
-
-
-
+---------------------------------------------------------------------
+-- 검증용 쿼리(분류된 개수와 그 종류 출력) --
+SELECT
+  user_pseudo_id,
+  COUNT(DISTINCT user_classification) AS num_classifications,
+  ARRAY_AGG(user_classification) AS classifications
+FROM user_classification_result
+GROUP BY
+  user_pseudo_id
+HAVING
+  num_classifications > 2
+------------------------------------- 끝 -------------------------------------
