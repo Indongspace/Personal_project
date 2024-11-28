@@ -14,7 +14,7 @@ WITH base AS (
 ) 
 -----------------------------------------------------------
 -- 유저 로그 기록 (첫날, 마지막날, 접속 수) 구하는 쿼리 --
-, user_activity AS (
+, user_firstlast_activity_and_connectioncnt AS (
   SELECT
     user_pseudo_id,
     MIN(event_date) AS first_event_date,
@@ -63,16 +63,36 @@ WITH base AS (
 )
 -----------------------------------------------------------------------------------------------------
 -- 복귀유저(Resurrected, 과거에 사용 -> 비활성 -> 다시 제품을 사용한 유저) 구하는 쿼리 --
-
-
-
-
-
-
-
-
+# 조건1. 과거 사용 이력이 있음(한 번 이상 제품을 사용한 기록이 있음) / 조건2. 비활성 기간(30일 이상 연속 미접속 상태였음) / 조건3. 재접속 후 활동 중(비활성화 이후 재접속했고, 최근 30일 이내 활동. 최근 30일 이후가 마지막이면 휴면유저로 분류되기 때문)
+, user_activity AS (
+  SELECT
+    user_pseudo_id,
+    event_date,
+    LAG(event_date) OVER(PARTITION BY user_pseudo_id ORDER BY event_date) AS prev_event_date
+  FROM base
+)
+, inactive_periods AS (
+  SELECT
+    *,
+    DATE_DIFF(event_date, prev_event_date, DAY) AS inactivity_days
+  FROM user_activity
+)
+, resurrected_user_classification AS (
+  SELECT
+    ip.user_pseudo_id
+    --ip.event_date,
+    --ip.prev_event_date,
+    --ip.inactivity_days,
+    --la.last_active_date
+  FROM inactive_periods AS ip
+  INNER JOIN (SELECT user_pseudo_id, MAX(event_date) AS last_active_date FROM base GROUP BY user_pseudo_id) AS la
+  ON ip.user_pseudo_id = la.user_pseudo_id
+  WHERE
+    ip.inactivity_days > 30 AND -- 30일 이상 비활성화
+    DATE_DIFF((SELECT MAX(event_date) FROM base), la.last_active_date, DAY) <= 30 -- 최근 30일 이내 재접속
+)
 ---------------------------------------------------------------------------------------------
--- (복귀유저 없는) 유저 분류 쿼리 --
+-- 유저 분류 쿼리 --
 , user_classification_result AS (
   SELECT
     ua.user_pseudo_id,
@@ -80,22 +100,33 @@ WITH base AS (
       WHEN ua.first_event_date = (SELECT MAX(event_date) FROM base) THEN 'New' -- 오늘 처음 사용 : 신규유저(New)
       WHEN cu.user_pseudo_id IS NOT NULL THEN 'Current' -- 이번 주 활동, 지속 사용 유저 : 기존유저(Current)
       WHEN du.user_pseudo_id IS NOT NULL THEN 'Dormant' -- 30일 이상 비활성화 : 휴면유저(Dormant)
+      WHEN ru.user_pseudo_id IS NOT NULL THEN 'Resurrected' -- 과거에 사용 -> 30일 이상 비활성화 -> 최근 30일 이내 재접속 : 복귀유저(Resurrected)
+      ELSE 'Unclassified' -- 미분류 유저 
     END AS user_classification
-  FROM user_activity AS ua
+  FROM user_firstlast_activity_and_connectioncnt AS ua
   LEFT JOIN current_user_classification AS cu
   ON ua.user_pseudo_id = cu.user_pseudo_id
   LEFT JOIN dormant_user_classification AS du
   ON ua.user_pseudo_id = du.user_pseudo_id
+  LEFT JOIN resurrected_user_classification AS ru
+  ON ua.user_pseudo_id = ru.user_pseudo_id
 )
 ---------------------------------------------------------------------
 -- 검증용 쿼리(분류된 개수와 그 종류 출력) --
-SELECT
-  user_pseudo_id,
-  COUNT(DISTINCT user_classification) AS num_classifications,
-  ARRAY_AGG(user_classification) AS classifications
-FROM user_classification_result
-GROUP BY
-  user_pseudo_id
-HAVING
-  num_classifications > 2
+-- SELECT
+--   user_pseudo_id,
+--   COUNT(DISTINCT user_classification) AS num_classifications,
+--   ARRAY_AGG(user_classification) AS classifications
+-- FROM user_classification_result
+-- GROUP BY
+--   user_pseudo_id
+-- HAVING
+--   num_classifications > 2
 ------------------------------------- 끝 -------------------------------------
+
+SELECT
+  *
+FROM user_classification_result
+
+
+
