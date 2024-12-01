@@ -1,5 +1,5 @@
 # 새로 만든 쿼리
-# 데이터의 기간은 2022년 8월 1일부터 2023년 1월 20일까지 : 임시로. 쿼리가 완성되면 전체 일자로 확대
+# 데이터의 기간은 2022년 8월 1일부터 2023년 1월 20일까지 
 # 분류기준 1) 신규유저(New) : 제품을 처음 사용하는 유저 / 2) 기존유저(Current) : 제품을 지속적으로 사용하는 유저 / 3) 복귀유저(Resurrected) : 과거에 사용 -> 비활성 -> 다시 제품을 사용한 유저 / 4) 휴면유저(Dormant) : 일정 기간 제품을 사용하지 않은 비활성화 사용자
 
 -- app_logs 데이터의 베이스 -- 
@@ -9,9 +9,7 @@ WITH base AS (
     DATE(DATETIME(TIMESTAMP_MICROS(event_timestamp), 'Asia/Seoul')) AS event_date,
     *EXCEPT(user_pseudo_id, event_timestamp, event_date)
   FROM advanced.app_logs
-  WHERE
-    event_date BETWEEN '2022-08-01' AND '2022-11-01'
-) 
+)
 -----------------------------------------------------------
 -- 유저 로그 기록 (첫날, 마지막날, 접속 수) 구하는 쿼리 --
 , user_firstlast_activity_and_connectioncnt AS (
@@ -26,7 +24,7 @@ WITH base AS (
 )
 -----------------------------------------------------------------
 -- 기존유저(Current, 제품을 지속적으로 사용하는 유저) 구하는 쿼리 -- 
-# 3주 이상 연속 활동한 유저를 기존(Current) 유저로 설정
+# 2주 이상 연속 활동한 유저를 기존(Current) 유저로 설정 - type1은 과거 2주 이상으로 연속 사용한 유저 - type2는 최근 2주 연속 사용한 유저
 , current_week_activity AS (
   SELECT
     DISTINCT user_pseudo_id
@@ -41,6 +39,16 @@ WITH base AS (
   FROM base
   GROUP BY
     user_pseudo_id
+), current_user_type1 AS (
+  -- 2주 이상 연속으로 접속한 기록이 있는 유저(과거)
+  SELECT
+    event_date
+  FROM base
+), current_user_type2 AS (
+  -- 최근 2주 연속 접속한 기록이 있는 유저(최신날짜로부터 2주)
+  SELECT
+    event_date
+  FROM base
 ), current_user_classification AS (
   SELECT
     DISTINCT user_pseudo_id
@@ -50,7 +58,7 @@ WITH base AS (
 )
 ----------------------------------------------------------------------------------------------
 -- 휴면유저(Dormant, 일정 기간 제품을 사용하지 않은 비활성화 사용자) 구하는 쿼리 --
-# 비활성화 기준 : 30일 이상 미사용 
+# 비활성화 기준 : 최근 30일 이상 미사용 
 , dormant_user_classification AS (
   SELECT
     user_pseudo_id,
@@ -97,7 +105,7 @@ WITH base AS (
   SELECT
     ua.user_pseudo_id,
     CASE
-      WHEN ua.first_event_date = (SELECT MAX(event_date) FROM base) THEN 'New' -- 오늘 처음 사용 : 신규유저(New)
+      WHEN DATE_DIFF((SELECT MAX(event_date) FROM base), ua.first_event_date, DAY) <= 7 THEN 'New' -- 가입일이 최근 일주일 이내 : 신규유저(New)
       WHEN cu.user_pseudo_id IS NOT NULL THEN 'Current' -- 이번 주 활동, 지속 사용 유저 : 기존유저(Current)
       WHEN du.user_pseudo_id IS NOT NULL THEN 'Dormant' -- 30일 이상 비활성화 : 휴면유저(Dormant)
       WHEN ru.user_pseudo_id IS NOT NULL THEN 'Resurrected' -- 과거에 사용 -> 30일 이상 비활성화 -> 최근 30일 이내 재접속 : 복귀유저(Resurrected)
@@ -125,8 +133,10 @@ WITH base AS (
 ------------------------------------- 끝 -------------------------------------
 
 SELECT
-  *
+  user_classification,
+  COUNT(user_pseudo_id) AS user_cnt
 FROM user_classification_result
-
+GROUP BY
+  user_classification
 
 
